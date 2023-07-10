@@ -553,4 +553,65 @@ describe('Loader hooks', { concurrency: true }, () => {
     assert.strictEqual(code, 0);
     assert.strictEqual(signal, null);
   });
+
+  it('should invoke `initialize` correctly', async () => {
+    const { code, signal, stdout, stderr } = await spawnPromisified(execPath, [
+      '--no-warnings',
+      '--experimental-loader',
+      fixtures.fileURL('/es-module-loaders/hooks-initialize.mjs'),
+      '--input-type=module',
+      '--eval',
+      `
+        import os from 'node:os';
+        import fs from 'node:fs';
+      `,
+    ]);
+
+    const lines = stdout.trim().split('\n');
+
+    assert.strictEqual(lines.length, 1);
+    assert.strictEqual(lines[0], 'hooks initialize');
+
+    assert.strictEqual(stderr, '');
+
+    assert.strictEqual(code, 0);
+    assert.strictEqual(signal, null);
+  });
+
+  it('should allow communicating with loader via `register` ports', async () => {
+    const { code, signal, stdout, stderr } = await spawnPromisified(execPath, [
+      '--no-warnings',
+      '--input-type=module',
+      '--eval',
+      `
+        import {MessageChannel} from 'node:worker_threads';
+        import {register} from 'node:module';
+        const {port1, port2} = new MessageChannel();
+        port1.on('message', (msg) => {
+          console.log('message', msg);
+        });
+        const result = register(
+          ${JSON.stringify(fixtures.fileURL('/es-module-loaders/hooks-initialize-port.mjs'))},
+          'data:',
+          port2,
+          [port2],
+        );
+        console.log('register', result);
+
+        await import('node:os');
+        port1.close();
+      `,
+    ]);
+
+    const lines = stdout.split('\n');
+
+    assert.strictEqual(lines[0], 'register ok');
+    assert.strictEqual(lines[1], 'message initialize');
+    assert.strictEqual(lines[2], 'message resolve node:os');
+
+    assert.strictEqual(stderr, '');
+
+    assert.strictEqual(code, 0);
+    assert.strictEqual(signal, null);
+  });
 });
